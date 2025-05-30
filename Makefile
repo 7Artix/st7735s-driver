@@ -1,8 +1,8 @@
 # Compiler and flags
 CXX = g++
 CC = gcc
-CXXFLAGS = -Wall -std=c++17 -I$(INC_DIR)
-CFLAGS = -Wall -I$(INC_DIR)
+CXXFLAGS = -Wall -std=c++17 -I$(INC_DIR) -MMD -MP
+CFLAGS = -Wall -I$(INC_DIR) -MMD -MP
 LDFLAGS = -lgpiodcxx -lgpiod
 
 # Directories
@@ -16,6 +16,7 @@ CPP_SOURCES = $(wildcard $(SRC_DIR)/*.cpp)
 C_SOURCES   = $(wildcard $(SRC_DIR)/*.c)
 CPP_OBJECTS = $(patsubst $(SRC_DIR)/%.cpp, $(BUILD_DIR)/%.o, $(CPP_SOURCES))
 C_OBJECTS   = $(patsubst $(SRC_DIR)/%.c,   $(BUILD_DIR)/%.o, $(C_SOURCES))
+DEPS = $(CPP_OBJECTS:.o=.d) $(C_OBJECTS:.o=.d)
 
 # Output executable
 TARGET = MyApp
@@ -44,5 +45,7 @@ $(BIN_DIR):
 # Clean build output
 clean:
 	rm -rf $(BUILD_DIR) $(BIN_DIR)
+
+-include $(DEPS)
 
 .PHONY: all clean
