@@ -1,0 +1,11 @@
+{
+    "files.associations": {
+        "*.metal": "\"cpp\"",
+        "bitset": "cpp",
+        "unistd.h": "c",
+        "gpiod.hpp": "c",
+        "st7735s.hpp": "c",
+        "cstdint": "cpp",
+        "iostream": "cpp"
+    }
+}
