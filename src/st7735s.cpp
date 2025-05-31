@@ -82,6 +82,11 @@ void ST7735S::writeData(uint8_t singleByte)
     writeData(&singleByte, 1);
 }
 
+void ST7735S::startWrite()
+{
+    writeCmd(0x2C);
+}
+
 void ST7735S::delay_ms(uint64_t ms)
 {
     std::this_thread::sleep_for(std::chrono::milliseconds(ms));
@@ -98,25 +103,38 @@ void ST7735S::reset()
 
 void ST7735S::init()
 {
+    // Panel Resolution Select:
+    // GM2=0 GM1=1 GM0=1
+    // 128RGB * 160 (S7~390 and G2~161 output)
+    // S:LCD Source Driver[396:1]
+    // G:LCD Gate   Driver[162:1]
     reset();
-    writeCmd(0x11); // Awake
-    delay_ms(10);
+    sleepMode(false); // Awake
     // Pixel Format
     writeCmd(0x3A);
-    writeData(0x55); //RGB565
+    writeData(0x55); // RGB565
+
     // Gamma select
     writeCmd(0x26);
-    writeData(0x04);
-    gammaCorrect();
+    writeData(0x02);
+    //gammaCorrect();
+
     // FPS formula: fps = 200kHz/(line+VPA[5:0])(DIVA[4:0]+4)
     // when GM = 011(128*160), line = 160
     // FPS select (normal mode, full colors)
-    writeCmd(0XB1);
-    writeData(0x0E);
-    writeData(0x14); // fps:61.7
-    // Display Inversion Control
+    writeCmd(0XB1); // normal mode
+    writeData(0x06);
+    writeData(0x0A); // fps: 117
+    writeCmd(0XB2); // idle mode
+    writeData(0x06);
+    writeData(0x0A); // fps: 117
+    writeCmd(0XB3); // partial mode
+    writeData(0x06);
+    writeData(0x0A); // fps: 117
+
+    // Display Inversion Control (refresh by line or frame)
     writeCmd(0xB4);
-    writeData(0x07);
+    writeData(0x02);
     // Power control: GVDD and voltage
     writeCmd(0xC0);
     writeData(0x0A);
@@ -131,48 +149,31 @@ void ST7735S::init()
     // VCOM Offset Control
     writeCmd(0xC7);
     writeData(0x40);
-    // Column address range set
-    uint8_t rangeCol[] = {0x00, 0x00, 0x00, 0x7F};
-    writeCmd(0x2A);
-    writeData(rangeCol, sizeof(rangeCol));
-    // Page address range set
-    uint8_t rangePage[] = {0x00, 0x00, 0x00, 0x9F};
-    writeCmd(0x2B);
-    writeData(rangePage, sizeof(rangePage));
-    //Source Driver Direction Control
-    writeCmd(0xB7);
-    writeData(0x00);
+
+    rangeReset();
+
+    // // Source Driver Direction Control
+    // writeCmd(0xB7);
+    // writeData(0x00);
+    // // Gate Driver Direction Control
+    // writeCmd(0xB8);
+    // writeData(0x00);
+
     // Set orientation
     setOrientation(Orientation::Landscape);
     // Display On
     writeCmd(0x29);
-    // Start receive data
-    writeCmd(0x2C);
 }
 
-void ST7735S::setOrientation(Orientation orientation)
+void ST7735S::colorInversion(bool inversion)
 {
-    // Memory access control
-    // D7 D6 D5 D4 D3  D2 D1 D0
-    // MY MX MV ML RGB MH x  x
-    uint8_t param = 0x00;
-    switch (orientation)
-    {
-    case Orientation::Portrait:
-        param = 0xC0;
-        break;
-    case Orientation::Landscape:
-        param = 0xA0;
-        break;
-    case Orientation::PortraitInverted:
-        param = 0x00;
-        break;
-    case Orientation::LandscapeInverted:
-        param = 0x60;
-        break;
-    }
-    writeCmd(0x36);
-    writeData(param);
+    writeCmd(inversion ? 0x21 : 0x20);
+}
+
+void ST7735S::sleepMode(bool on)
+{
+    writeCmd(on ? 0x10 : 0x11);
+    delay_ms(on ? 5 : 120);
 }
 
 void ST7735S::gammaCorrect()
@@ -208,11 +209,10 @@ void ST7735S::displaySingleFrame(uint32_t* pixels)
 
 void ST7735S::fillWith(uint32_t color_rgb888)
 {
-    writeCmd(0x2C); // Memory write
     uint16_t color = RGB888ToRGB565(color_rgb888);
     uint8_t high = (color >> 8) & 0xFF;
     uint8_t low = color & 0xFF;
-    const size_t buf_size = 4096;
+    size_t buf_size = 4096;
     std::vector<uint8_t> buffer(buf_size);
 
     auto start = std::chrono::high_resolution_clock::now();
@@ -226,7 +226,89 @@ void ST7735S::fillWith(uint32_t color_rgb888)
 
     std::cout << "Time spent:" << duration.count() << "μs" << std::endl;
 
+    startWrite();
     for (uint8_t i = 0; i < 10; i++) {
         writeData(buffer.data(), buf_size);
     }
+}
+
+void ST7735S::displaySwitch(bool on)
+{
+    writeCmd(on ? 0x29 : 0x28);
+}
+
+void ST7735S::idleMode(bool on)
+{
+    writeCmd(on ? 0x39 : 0x38);
+}
+
+void ST7735S::rangeSet(uint8_t xS, uint8_t xE, uint8_t yS, uint8_t yE)
+{
+    uint8_t xBuf[] = {0x00, xS, 0x00, xE};
+    uint8_t yBuf[] = {0x00, yS, 0x00, yE};
+
+    writeCmd(0x2A);
+    writeData(xBuf, sizeof(xBuf));
+    writeCmd(0x2B);
+    writeData(yBuf, sizeof(yBuf));
+}
+
+void ST7735S::rangeReset()
+{
+    MADCTL[5] ? rangeSet(0,159,0,127) : rangeSet(0,127,0,159);
+}
+
+void ST7735S::setMADCTL()
+{
+    writeCmd(0x36);
+    writeData(static_cast<uint8_t>(MADCTL.to_ulong()));
+}
+
+void ST7735S::refreshDirection(bool ml, bool mh)
+{
+    // ML=0 refresh down to up
+    // ML=1 refresh up to down
+    MADCTL[4] = ml;
+    // MH=0 refresh left to right
+    // MH=1 refresh right to left
+    MADCTL[2] = mh;
+    setMADCTL();
+}
+
+void ST7735S::colorOrderRGB(bool RGB)
+{
+    // RGB or BGR
+    MADCTL[3] = !RGB;
+    setMADCTL();
+}
+
+void ST7735S::setOrientation(Orientation orientation)
+{
+    // Memory access control
+    // D7 D6 D5 D4 D3  D2 D1 D0
+    // MY MX MV ML RGB MH  x  x
+    switch (orientation)
+    {
+    case Orientation::Portrait:
+        MADCTL.set(7) = 0;
+        MADCTL.set(6) = 0;
+        MADCTL.set(5) = 0;
+        break;
+    case Orientation::PortraitInverted:
+        MADCTL.set(7) = 1;
+        MADCTL.set(6) = 1;
+        MADCTL.set(5) = 0;
+        break;
+    case Orientation::Landscape:
+        MADCTL.set(7) = 0;
+        MADCTL.set(6) = 1;
+        MADCTL.set(5) = 1;
+        break;
+    case Orientation::LandscapeInverted:
+        MADCTL.set(7) = 1;
+        MADCTL.set(6) = 0;
+        MADCTL.set(5) = 1;
+        break;
+    }
+    setMADCTL();
 }

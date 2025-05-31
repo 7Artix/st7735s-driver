@@ -29,7 +29,9 @@ int main() {
         delay_ms(timeDelay);
         st7735s.fillWith(0x000000);
         delay_ms(timeDelay);
+        break;
     }
+    st7735s.sleepMode(true);
 }
 
 void delay_ms(uint64_t ms)
