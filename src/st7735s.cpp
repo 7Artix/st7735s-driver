@@ -7,6 +7,7 @@
 #include <iostream>
 #include <chrono>
 #include <thread>
+#include <cmath>
 
 ST7735S::ST7735S(const std::string& spi_dev, 
     const std::string& gpio_chip_name_rst, 
@@ -74,7 +75,12 @@ void ST7735S::writeCmd(uint8_t cmd)
 
 void ST7735S::writeData(const uint8_t* data, size_t len)
 {
-    spiTransfer(true, data, len);
+    size_t offset = 0;
+    while (offset < len) {
+        size_t chunkSize = std::min(maxSPIChunkSize, len - offset);
+        spiTransfer(true, data + offset, chunkSize);
+        offset += chunkSize;
+    }
 }
 
 void ST7735S::writeData(uint8_t singleByte)
@@ -116,8 +122,8 @@ void ST7735S::init()
 
     // Gamma select
     writeCmd(0x26);
-    writeData(0x02);
-    //gammaCorrect();
+    writeData(0x03);
+    // gammaCorrect();
 
     // FPS formula: fps = 200kHz/(line+VPA[5:0])(DIVA[4:0]+4)
     // when GM = 011(128*160), line = 160
@@ -150,17 +156,19 @@ void ST7735S::init()
     writeCmd(0xC7);
     writeData(0x40);
 
+    colorInversion(false);
+    colorOrderRGB(true);
+
     rangeReset();
+    idleMode(false);
 
-    // // Source Driver Direction Control
-    // writeCmd(0xB7);
-    // writeData(0x00);
-    // // Gate Driver Direction Control
-    // writeCmd(0xB8);
-    // writeData(0x00);
+    // Source Driver Direction Control
+    writeCmd(0xB7);
+    writeData(0x00);
+    // Gate Driver Direction Control
+    writeCmd(0xB8);
+    writeData(0x00);
 
-    // Set orientation
-    setOrientation(Orientation::Landscape);
     // Display On
     writeCmd(0x29);
 }
@@ -202,11 +210,6 @@ uint16_t ST7735S::RGB888ToRGB565(uint32_t color)
     return ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3);
 }
 
-void ST7735S::displaySingleFrame(uint32_t* pixels)
-{
-    
-}
-
 void ST7735S::fillWith(uint32_t color_rgb888)
 {
     uint16_t color = RGB888ToRGB565(color_rgb888);
@@ -225,11 +228,16 @@ void ST7735S::fillWith(uint32_t color_rgb888)
     auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end-start);
 
     std::cout << "Time spent:" << duration.count() << "μs" << std::endl;
-
+    rangeReset();
     startWrite();
     for (uint8_t i = 0; i < 10; i++) {
         writeData(buffer.data(), buf_size);
     }
+}
+
+void ST7735S::clear()
+{
+    fillWith(0x000000);
 }
 
 void ST7735S::displaySwitch(bool on)
@@ -282,7 +290,7 @@ void ST7735S::colorOrderRGB(bool RGB)
     setMADCTL();
 }
 
-void ST7735S::setOrientation(Orientation orientation)
+void ST7735S::orientationSet(Orientation orientation)
 {
     // Memory access control
     // D7 D6 D5 D4 D3  D2 D1 D0
@@ -290,25 +298,115 @@ void ST7735S::setOrientation(Orientation orientation)
     switch (orientation)
     {
     case Orientation::Portrait:
-        MADCTL.set(7) = 0;
-        MADCTL.set(6) = 0;
-        MADCTL.set(5) = 0;
+        MADCTL[7] = 0;
+        MADCTL[6] = 0;
+        MADCTL[5] = 0;
         break;
     case Orientation::PortraitInverted:
-        MADCTL.set(7) = 1;
-        MADCTL.set(6) = 1;
-        MADCTL.set(5) = 0;
+        MADCTL[7] = 1;
+        MADCTL[6] = 1;
+        MADCTL[5] = 0;
         break;
     case Orientation::Landscape:
-        MADCTL.set(7) = 0;
-        MADCTL.set(6) = 1;
-        MADCTL.set(5) = 1;
+        MADCTL[7] = 0;
+        MADCTL[6] = 1;
+        MADCTL[5] = 1;
         break;
     case Orientation::LandscapeInverted:
-        MADCTL.set(7) = 1;
-        MADCTL.set(6) = 0;
-        MADCTL.set(5) = 1;
+        MADCTL[7] = 1;
+        MADCTL[6] = 0;
+        MADCTL[5] = 1;
         break;
     }
+    std::cout << "MADCTL: " << MADCTL << std::endl;
     setMADCTL();
+}
+
+void ST7735S::rangeAdapt(int widthImage, int heightImage, Orientation orientation)
+{
+    double ratioImage = static_cast<double>(widthImage) / heightImage;
+    double ratioScreenLandscape = static_cast<double>(screenHeight) / screenWidth;
+    double ratioScreenPortrait = static_cast<double>(screenWidth) / screenHeight;
+    std::cout << "Image: " << widthImage << "*" << heightImage << " Ratio: " << ratioImage << std::endl;
+    uint8_t xS = 0, xE = 0, yS = 0, yE = 0;
+
+    if (orientation == Orientation::Landscape || orientation == Orientation::LandscapeInverted) {
+        if (ratioImage >= ratioScreenLandscape) {
+            displayArea.displayWidth = screenHeight;
+            displayArea.displayHeight = static_cast<int>(std::round(screenHeight / ratioImage));
+        } else {
+            displayArea.displayHeight = screenWidth;
+            displayArea.displayWidth = static_cast<int>(std::round(screenWidth * ratioImage));
+        }
+        xS = static_cast<uint8_t>(std::round((screenHeight - displayArea.displayWidth) / 2));
+        xE = xS + displayArea.displayWidth;
+        yS = static_cast<uint8_t>(std::round((screenWidth - displayArea.displayHeight) / 2));
+        yE = yS + displayArea.displayHeight;
+    } else {
+        if (ratioImage <= ratioScreenPortrait) {
+            displayArea.displayHeight = screenHeight;
+            displayArea.displayWidth = static_cast<int>(std::round(screenHeight * ratioImage));
+        } else {
+            displayArea.displayWidth = screenWidth;
+            displayArea.displayHeight = static_cast<int>(std::round(screenWidth / ratioImage));
+        }
+        xS = static_cast<uint8_t>(std::round((screenWidth - displayArea.displayWidth) / 2));
+        xE = xS + displayArea.displayWidth;
+        yS = static_cast<uint8_t>(std::round((screenHeight - displayArea.displayHeight) / 2));
+        yE = yS + displayArea.displayHeight;
+    }
+    orientationSet(orientation);
+    rangeSet(xS, xE, yS, yE);
+}
+
+void ST7735S::imagePlay(std::string& path, Orientation orientation)
+{
+    clear();
+    imghandler::ImageRGB565 image565;
+    imghandler::ImageRGB24 image24Src;
+    imghandler::ImageRGB24 image24Dst;
+    imghandler::ImageType imageType = imghandler::formatProbe(path);
+    switch (imageType)
+    {
+    case imghandler::ImageType::JPG:
+        if (!imghandler::decodeJpegToRGB24(path, image24Src)) {
+            std::cout << "Decode failed" << std::endl;
+            return;
+        }
+        break;
+    default:
+        std::cout << "Unknown image format" << std::endl;
+        break;
+    }
+    rangeAdapt(image24Src.width, image24Src.height, orientation);
+    std::cout << "Display area: " << displayArea.displayWidth << "*" << displayArea.displayHeight << std::endl;
+    if (!imghandler::scaleImage(image24Src, image24Dst, displayArea.displayWidth, displayArea.displayHeight)) {
+        std::cout << "Scale failed" << std::endl;
+        return;
+    }
+    if (!imghandler::convertToRGB565(image24Dst, image565)) {
+        std::cout << "Convert failed" << std::endl;
+        return;
+    }
+    std::cout << "image size: "<< std::dec << image565.width << " * " << image565.height << " = " << image565.data.size() << std::endl;
+    startWrite();
+    writeData(image565.data.data(), image565.data.size());
+}
+
+void ST7735S::testSetRange()
+{
+    orientationSet(Orientation::Landscape);
+    rangeSet(9,59,9,119);
+    size_t bufSize = 7000;
+    std::vector<uint8_t> buffer(bufSize);
+    for (size_t i = 0; i < bufSize; i += 2) {
+        buffer[i] = 0xFF;
+        buffer[i+1] = 0x00;
+    }
+    for (size_t i = 0; i < bufSize; i += 2) {
+        buffer[i] = 0x0A;
+        buffer[i+1] = 0x3C;
+    }
+    startWrite();
+    writeData(buffer.data(), buffer.size());
 }

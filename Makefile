@@ -3,7 +3,9 @@ CXX = g++
 CC = gcc
 CXXFLAGS = -Wall -std=c++17 -I$(INC_DIR) -MMD -MP
 CFLAGS = -Wall -I$(INC_DIR) -MMD -MP
-LDFLAGS = -lgpiodcxx -lgpiod
+
+# Add -g if debug is needed
+LDFLAGS = -lgpiodcxx -lgpiod -lyuv -lturbojpeg -lpng
 
 # Directories
 SRC_DIR = src
