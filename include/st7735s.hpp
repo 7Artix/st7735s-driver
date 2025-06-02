@@ -11,8 +11,8 @@ class ST7735S {
 private:
     gpiod::line gpio_line_rst;
     gpiod::line gpio_line_dc;
-    // 40000000Hz
-    uint32_t speed = 40000000;
+    // 34000000Hz
+    uint32_t speed = 32000000;
     const size_t maxSPIChunkSize = 4096;
     // Memory access control
     // D7 D6 D5 D4 D3  D2 D1 D0

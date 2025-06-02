@@ -80,11 +80,11 @@ bool convertToRGB565(const ImageRGB24& src, ImageRGB565& dst)
         std::swap(dst.data[i], dst.data[i + 1]);
     }
     
-    std::vector<uint8_t> sub(dst.data.begin() + 0, dst.data.begin() + 10);
-    for (uint8_t b : sub) {
-        std::cout << "0x" << std::hex << static_cast<int>(b) << " ";
-    }
-    std::cout << std::endl;
+    // std::vector<uint8_t> sub(dst.data.begin() + 0, dst.data.begin() + 10);
+    // for (uint8_t b : sub) {
+    //     std::cout << "0x" << std::hex << static_cast<int>(b) << " ";
+    // }
+    // std::cout << std::endl;
     
     return true;
 }

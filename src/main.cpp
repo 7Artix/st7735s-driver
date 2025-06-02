@@ -9,10 +9,11 @@
 //  D/C: GPIO3_C1
 
 int main() {
-    std::string imagePath = "../images/bunny.jpg";
+    std::string imagePath = "../images/artix_resize.jpg";
     ST7735S st7735s("/dev/spidev3.0","gpiochip3",8,"gpiochip3",17);
     st7735s.init();
-    st7735s.imagePlay(imagePath, ST7735S::Orientation::Portrait);
+    st7735s.imagePlay(imagePath, ST7735S::Orientation::PortraitInverted);
+    st7735s.reset();
 }
 
 void delay_ms(uint64_t ms)

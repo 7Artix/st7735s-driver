@@ -159,7 +159,7 @@ void ST7735S::init()
     colorInversion(false);
     colorOrderRGB(true);
 
-    rangeReset();
+    // rangeReset();
     idleMode(false);
 
     // Source Driver Direction Control
@@ -218,16 +218,17 @@ void ST7735S::fillWith(uint32_t color_rgb888)
     size_t buf_size = 4096;
     std::vector<uint8_t> buffer(buf_size);
 
-    auto start = std::chrono::high_resolution_clock::now();
+    // auto start = std::chrono::high_resolution_clock::now();
+
     for (size_t i = 0; i < buf_size; i += 2) {
         buffer[i] = high;
         buffer[i+1] = low;
     }
-    auto end = std::chrono::high_resolution_clock::now();
 
-    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end-start);
+    // auto end = std::chrono::high_resolution_clock::now();
+    // auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end-start);
+    // std::cout << "Time spent:" << duration.count() << "μs" << std::endl;
 
-    std::cout << "Time spent:" << duration.count() << "μs" << std::endl;
     rangeReset();
     startWrite();
     for (uint8_t i = 0; i < 10; i++) {
@@ -252,13 +253,15 @@ void ST7735S::idleMode(bool on)
 
 void ST7735S::rangeSet(uint8_t xS, uint8_t xE, uint8_t yS, uint8_t yE)
 {
+    delay_ms(10);
     uint8_t xBuf[] = {0x00, xS, 0x00, xE};
     uint8_t yBuf[] = {0x00, yS, 0x00, yE};
-
+    // printf("rangeSet: %d, %d, %d, %d\n", xBuf[1], xBuf[3], yBuf[1], yBuf[3]);
     writeCmd(0x2A);
     writeData(xBuf, sizeof(xBuf));
     writeCmd(0x2B);
     writeData(yBuf, sizeof(yBuf));
+    delay_ms(10);
 }
 
 void ST7735S::rangeReset()
@@ -318,7 +321,7 @@ void ST7735S::orientationSet(Orientation orientation)
         MADCTL[5] = 1;
         break;
     }
-    std::cout << "MADCTL: " << MADCTL << std::endl;
+    // std::cout << "MADCTL: " << MADCTL << std::endl;
     setMADCTL();
 }
 
@@ -327,7 +330,7 @@ void ST7735S::rangeAdapt(int widthImage, int heightImage, Orientation orientatio
     double ratioImage = static_cast<double>(widthImage) / heightImage;
     double ratioScreenLandscape = static_cast<double>(screenHeight) / screenWidth;
     double ratioScreenPortrait = static_cast<double>(screenWidth) / screenHeight;
-    std::cout << "Image: " << widthImage << "*" << heightImage << " Ratio: " << ratioImage << std::endl;
+    std::cout << "Original image: " << widthImage << "*" << heightImage << " Ratio: " << ratioImage << std::endl;
     uint8_t xS = 0, xE = 0, yS = 0, yE = 0;
 
     if (orientation == Orientation::Landscape || orientation == Orientation::LandscapeInverted) {
@@ -338,22 +341,25 @@ void ST7735S::rangeAdapt(int widthImage, int heightImage, Orientation orientatio
             displayArea.displayHeight = screenWidth;
             displayArea.displayWidth = static_cast<int>(std::round(screenWidth * ratioImage));
         }
-        xS = static_cast<uint8_t>(std::round((screenHeight - displayArea.displayWidth) / 2));
-        xE = xS + displayArea.displayWidth;
-        yS = static_cast<uint8_t>(std::round((screenWidth - displayArea.displayHeight) / 2));
-        yE = yS + displayArea.displayHeight;
+        xS = static_cast<uint8_t>(std::round((static_cast<double>(screenHeight) - displayArea.displayWidth) / 2.0));
+        xE = xS + displayArea.displayWidth - 1;
+        yS = static_cast<uint8_t>(std::round((static_cast<double>(screenWidth) - displayArea.displayHeight) / 2.0));
+        yE = yS + displayArea.displayHeight - 1;
     } else {
         if (ratioImage <= ratioScreenPortrait) {
             displayArea.displayHeight = screenHeight;
-            displayArea.displayWidth = static_cast<int>(std::round(screenHeight * ratioImage));
+            displayArea.displayWidth = static_cast<int>(std::round(static_cast<double>(screenHeight) * ratioImage));
         } else {
             displayArea.displayWidth = screenWidth;
-            displayArea.displayHeight = static_cast<int>(std::round(screenWidth / ratioImage));
+            displayArea.displayHeight = static_cast<int>(std::round(static_cast<double>(screenWidth) / ratioImage));
         }
-        xS = static_cast<uint8_t>(std::round((screenWidth - displayArea.displayWidth) / 2));
-        xE = xS + displayArea.displayWidth;
-        yS = static_cast<uint8_t>(std::round((screenHeight - displayArea.displayHeight) / 2));
-        yE = yS + displayArea.displayHeight;
+        xS = static_cast<uint8_t>(std::round((static_cast<double>(screenWidth) - displayArea.displayWidth) / 2.0));
+        xE = xS + static_cast<uint8_t>(displayArea.displayWidth) - 1;
+        yS = static_cast<uint8_t>(std::round((static_cast<double>(screenHeight) - displayArea.displayHeight) / 2.0));
+        yE = yS + static_cast<uint8_t>(displayArea.displayHeight) - 1;
+
+        // std::cout << "X: " << std::dec << static_cast<int>(xS) << " - " << static_cast<int>(xE) << std::endl; 
+        // std::cout << "Y: " << std::dec << static_cast<int>(yS) << " - " << static_cast<int>(yE) << std::endl;
     }
     orientationSet(orientation);
     rangeSet(xS, xE, yS, yE);
@@ -379,7 +385,6 @@ void ST7735S::imagePlay(std::string& path, Orientation orientation)
         break;
     }
     rangeAdapt(image24Src.width, image24Src.height, orientation);
-    std::cout << "Display area: " << displayArea.displayWidth << "*" << displayArea.displayHeight << std::endl;
     if (!imghandler::scaleImage(image24Src, image24Dst, displayArea.displayWidth, displayArea.displayHeight)) {
         std::cout << "Scale failed" << std::endl;
         return;
@@ -388,7 +393,8 @@ void ST7735S::imagePlay(std::string& path, Orientation orientation)
         std::cout << "Convert failed" << std::endl;
         return;
     }
-    std::cout << "image size: "<< std::dec << image565.width << " * " << image565.height << " = " << image565.data.size() << std::endl;
+    // std::cout << "Display area: " << std::dec << displayArea.displayWidth << " * " << displayArea.displayHeight << std::endl;
+    // std::cout << "data size: " << std::dec << image565.width << " * " << image565.height << " = " << image565.data.size() << std::endl;
     startWrite();
     writeData(image565.data.data(), image565.data.size());
 }
