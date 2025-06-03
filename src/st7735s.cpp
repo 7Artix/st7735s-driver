@@ -357,10 +357,9 @@ void ST7735S::rangeAdapt(int widthImage, int heightImage, Orientation orientatio
         xE = xS + static_cast<uint8_t>(displayArea.displayWidth) - 1;
         yS = static_cast<uint8_t>(std::round((static_cast<double>(screenHeight) - displayArea.displayHeight) / 2.0));
         yE = yS + static_cast<uint8_t>(displayArea.displayHeight) - 1;
-
-        // std::cout << "X: " << std::dec << static_cast<int>(xS) << " - " << static_cast<int>(xE) << std::endl; 
-        // std::cout << "Y: " << std::dec << static_cast<int>(yS) << " - " << static_cast<int>(yE) << std::endl;
     }
+    // std::cout << "X: " << std::dec << static_cast<int>(xS) << " - " << static_cast<int>(xE) << std::endl; 
+    // std::cout << "Y: " << std::dec << static_cast<int>(yS) << " - " << static_cast<int>(yE) << std::endl;
     orientationSet(orientation);
     rangeSet(xS, xE, yS, yE);
 }
@@ -371,18 +370,24 @@ void ST7735S::imagePlay(std::string& path, Orientation orientation)
     imghandler::ImageRGB565 image565;
     imghandler::ImageRGB24 image24Src;
     imghandler::ImageRGB24 image24Dst;
-    imghandler::ImageType imageType = imghandler::formatProbe(path);
-    switch (imageType)
-    {
-    case imghandler::ImageType::JPG:
-        if (!imghandler::decodeJpegToRGB24(path, image24Src)) {
-            std::cout << "Decode failed" << std::endl;
-            return;
-        }
-        break;
-    default:
-        std::cout << "Unknown image format" << std::endl;
-        break;
+
+    // imghandler::ImageType imageType = imghandler::formatProbe(path);
+    // switch (imageType)
+    // {
+    // case imghandler::ImageType::JPG:
+    //     if (!imghandler::decodeJpegToRGB24(path, image24Src)) {
+    //         std::cout << "Decode failed" << std::endl;
+    //         return;
+    //     }
+    //     break;
+    // default:
+    //     std::cout << "Unknown image format" << std::endl;
+    //     break;
+    // }
+    
+    if (!imghandler::decodeImageToRGB24(path, image24Src)) {
+        std::cout << "Decode failed" << std::endl;
+        return;
     }
     rangeAdapt(image24Src.width, image24Src.height, orientation);
     if (!imghandler::scaleImage(image24Src, image24Dst, displayArea.displayWidth, displayArea.displayHeight)) {

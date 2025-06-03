@@ -1,4 +1,5 @@
 #include "main.hpp"
+#include "video_player.hpp"
 
 //Pins connection: 
 //  SPI: SPI3_M1 CS0
@@ -9,14 +10,12 @@
 //  D/C: GPIO3_C1
 
 int main() {
-    std::string imagePath = "../images/artix_resize.jpg";
+    std::string pathImage = "../gallery/shiroko.png";
+    std::string pathVideo = "../gallery/bad_apple.mp4";
     ST7735S st7735s("/dev/spidev3.0","gpiochip3",8,"gpiochip3",17);
     st7735s.init();
-    st7735s.imagePlay(imagePath, ST7735S::Orientation::PortraitInverted);
+    // st7735s.imagePlay(pathImage, ST7735S::Orientation::LandscapeInverted);
     st7735s.reset();
-}
-
-void delay_ms(uint64_t ms)
-{
-    std::this_thread::sleep_for(std::chrono::milliseconds(ms));
+    VideoPlayer player(st7735s);
+    player.load(pathVideo);
 }

@@ -5,7 +5,7 @@ CXXFLAGS = -Wall -std=c++17 -I$(INC_DIR) -MMD -MP
 CFLAGS = -Wall -I$(INC_DIR) -MMD -MP
 
 # Add -g if debug is needed
-LDFLAGS = -lgpiodcxx -lgpiod -lyuv -lturbojpeg -lpng # -g
+LDFLAGS = -lgpiodcxx -lgpiod -lyuv -lturbojpeg -lavformat -lavcodec -lavutil -lswscale # -g
 
 # Directories
 SRC_DIR = src

@@ -27,6 +27,7 @@ ImageType formatProbe(const std::string& path);
 
 bool decodeJpegToRGB24(const std::string& filename, ImageRGB24& image);
 bool decodePngToRGB24(const std::string& filename, ImageRGB24& image);
+bool decodeImageToRGB24(const std::string& filename, ImageRGB24& image);
 
 bool convertToRGB565(const ImageRGB24& src, ImageRGB565& dst);
 bool scaleImage(const ImageRGB24& src, ImageRGB24& dst, int targetWidth, int targetHeight);
