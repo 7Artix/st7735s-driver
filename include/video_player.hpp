@@ -6,6 +6,7 @@
 #include <queue>
 #include <atomic>
 #include <string>
+#include <chrono>
 
 #include "uni_frame.hpp"
 #include "st7735s.hpp"
@@ -15,11 +16,12 @@ extern "C" {
 #include <libavcodec/avcodec.h>
 #include <libavutil/imgutils.h>
 #include <libswscale/swscale.h>
+#include <libavutil/time.h>
 }
 
 class VideoPlayer {
 public:
-    explicit VideoPlayer(ST7735S& screen);
+    explicit VideoPlayer(ST7735S& screen, uniframe::Orientation orientation);
     ~VideoPlayer();
 
     bool load(const std::string& path);
@@ -32,6 +34,8 @@ public:
 
 private:
     ST7735S& screen;
+
+    uniframe::Orientation orientation;
 
     const size_t maxQueueSizePacketVideo = 10;
     const size_t maxQueueSizeRawVideo = 10;
@@ -46,6 +50,9 @@ private:
         void operator()(AVPacket* p) const { av_packet_free(&p); }
     };
     using AVPacketPtr = std::unique_ptr<AVPacket, AVPacketDeleter>;
+
+    std::queue<AVPacketPtr> queuePacketVideo;
+    std::queue<AVFramePtr> queueRawVideo;
 
     std::thread threadDemux;
     std::thread threadDecodeVideo;
@@ -63,8 +70,10 @@ private:
     std::condition_variable cvRawVideo;
     // std::condition_variable cvRawAudio;
 
-    std::queue<AVPacket*> queuePacketVideo;
-    std::queue<AVFrame*> queueRawVideo;
+
+    // // deprecated use smart pointer instead.
+    // std::queue<AVPacket*> queuePacketVideo;
+    // std::queue<AVFrame*> queueRawVideo;
     
     // // deprecated use AVFrame instead
     // std::queue<std::unique_ptr<uniframe::ImageRGB565>> queueRawVideo;
@@ -93,5 +102,5 @@ private:
 
     void loopDemux();
     void loopDecodeVideo();
-    void loopDisplay();
+    void loopDisplayVideo();
 };

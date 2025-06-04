@@ -293,29 +293,29 @@ void ST7735S::colorOrderRGB(bool RGB)
     setMADCTL();
 }
 
-void ST7735S::orientationSet(Orientation orientation)
+void ST7735S::orientationSet(uniframe::Orientation orientation)
 {
     // Memory access control
     // D7 D6 D5 D4 D3  D2 D1 D0
     // MY MX MV ML RGB MH  x  x
     switch (orientation)
     {
-    case Orientation::Portrait:
+    case uniframe::Orientation::Portrait:
         MADCTL[7] = 0;
         MADCTL[6] = 0;
         MADCTL[5] = 0;
         break;
-    case Orientation::PortraitInverted:
+    case uniframe::Orientation::PortraitInverted:
         MADCTL[7] = 1;
         MADCTL[6] = 1;
         MADCTL[5] = 0;
         break;
-    case Orientation::Landscape:
+    case uniframe::Orientation::Landscape:
         MADCTL[7] = 0;
         MADCTL[6] = 1;
         MADCTL[5] = 1;
         break;
-    case Orientation::LandscapeInverted:
+    case uniframe::Orientation::LandscapeInverted:
         MADCTL[7] = 1;
         MADCTL[6] = 0;
         MADCTL[5] = 1;
@@ -325,7 +325,7 @@ void ST7735S::orientationSet(Orientation orientation)
     setMADCTL();
 }
 
-void ST7735S::rangeAdapt(int widthImage, int heightImage, Orientation orientation)
+void ST7735S::rangeAdapt(int widthImage, int heightImage, uniframe::Orientation orientation)
 {
     double ratioImage = static_cast<double>(widthImage) / heightImage;
     double ratioScreenLandscape = static_cast<double>(screenHeight) / screenWidth;
@@ -333,7 +333,7 @@ void ST7735S::rangeAdapt(int widthImage, int heightImage, Orientation orientatio
     std::cout << "Original image: " << widthImage << "*" << heightImage << " Ratio: " << ratioImage << std::endl;
     uint8_t xS = 0, xE = 0, yS = 0, yE = 0;
 
-    if (orientation == Orientation::Landscape || orientation == Orientation::LandscapeInverted) {
+    if (orientation == uniframe::Orientation::Landscape || orientation == uniframe::Orientation::LandscapeInverted) {
         if (ratioImage >= ratioScreenLandscape) {
             displayArea.displayWidth = screenHeight;
             displayArea.displayHeight = static_cast<int>(std::round(screenHeight / ratioImage));
@@ -364,7 +364,7 @@ void ST7735S::rangeAdapt(int widthImage, int heightImage, Orientation orientatio
     rangeSet(xS, xE, yS, yE);
 }
 
-void ST7735S::imagePlay(std::string& path, Orientation orientation)
+void ST7735S::imagePlay(std::string& path, uniframe::Orientation orientation)
 {
     clear();
     imghandler::ImageRGB565 image565;
@@ -406,7 +406,7 @@ void ST7735S::imagePlay(std::string& path, Orientation orientation)
 
 void ST7735S::testSetRange()
 {
-    orientationSet(Orientation::Landscape);
+    orientationSet(uniframe::Orientation::Landscape);
     rangeSet(9,59,9,119);
     size_t bufSize = 7000;
     std::vector<uint8_t> buffer(bufSize);

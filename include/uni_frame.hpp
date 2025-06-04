@@ -23,17 +23,24 @@ enum class ImageType {
     JPG
 };
 
-class FramePool {
-public:
-    FramePool(size_t maxsize);
-    ~FramePool();
-
-    std::unique_ptr<ImageRGB565> acquire();
-    void release(std::unique_ptr<ImageRGB565> frameRaw);
-
-private:
-    std::queue<std::unique_ptr<ImageRGB565>> pool;
-    std::mutex mtx;
+enum class Orientation {
+    Portrait,
+    Landscape,
+    PortraitInverted,
+    LandscapeInverted
 };
+
+// class FramePool {
+// public:
+//     FramePool(size_t maxsize);
+//     ~FramePool();
+
+//     std::unique_ptr<ImageRGB565> acquire();
+//     void release(std::unique_ptr<ImageRGB565> frameRaw);
+
+// private:
+//     std::queue<std::unique_ptr<ImageRGB565>> pool;
+//     std::mutex mtx;
+// };
 
 }

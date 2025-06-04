@@ -5,6 +5,7 @@
 #include <string>
 #include <bitset>
 #include "image_handler.hpp"
+#include "uni_frame.hpp"
 
 class ST7735S {
 
@@ -18,26 +19,18 @@ private:
     // D7 D6 D5 D4 D3  D2 D1 D0
     // MY MX MV ML RGB MH  x  x
     std::bitset<8> MADCTL = 0b00000000;
-    struct DisplayArea{int displayWidth; int displayHeight;} displayArea;
     int spi_fd;
     void spiTransfer(bool isData, const uint8_t* data, size_t len);
     void writeCmd(uint8_t cmd);
-    void writeData(const uint8_t* data, size_t len);
     void writeData(uint8_t singleByte);
     void delay_ms(uint64_t ms);
     void gammaCorrect();
     void setMADCTL();
-    void startWrite();
     uint16_t RGB888ToRGB565(uint32_t color);
 public:
     int screenWidth = 128;
     int screenHeight = 160;
-    enum class Orientation {
-        Portrait,
-        Landscape,
-        PortraitInverted,
-        LandscapeInverted
-    };
+    struct DisplayArea{int displayWidth; int displayHeight;} displayArea;
     // "spi_dev" should be like: "/dev/spidev3.0"
     // "gpio_chip_*" refers to the gpiochip of the pin, should be like: "gpiochip0"
     // "gpio_offset_*" refers to the offset of the pin
@@ -55,12 +48,14 @@ public:
     void idleMode(bool on);
     void rangeSet(uint8_t xS, uint8_t xE, uint8_t yS, uint8_t yE);
     void rangeReset();
-    void rangeAdapt(int width, int height, Orientation orientation);
+    void rangeAdapt(int width, int height, uniframe::Orientation orientation);
     void refreshDirection(bool ml, bool mh);
     void colorOrderRGB(bool RGB);
-    void orientationSet(Orientation orientation);
+    void orientationSet(uniframe::Orientation orientation);
     void fillWith(uint32_t color_rgb888);
     void clear();
-    void imagePlay(std::string& path, Orientation orientation);
+    void imagePlay(std::string& path, uniframe::Orientation orientation);
     void testSetRange();
+    void startWrite();
+    void writeData(const uint8_t* data, size_t len);
 };

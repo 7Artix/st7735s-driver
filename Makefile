@@ -5,7 +5,7 @@ CXXFLAGS = -Wall -std=c++17 -I$(INC_DIR) -MMD -MP
 CFLAGS = -Wall -I$(INC_DIR) -MMD -MP
 
 # Add -g if debug is needed
-LDFLAGS = -lgpiodcxx -lgpiod -lyuv -lturbojpeg -lavformat -lavcodec -lavutil -lswscale # -g
+LDFLAGS = -lgpiodcxx -lgpiod -lyuv -lturbojpeg -lavformat -lavcodec -lavutil -lswscale -lpthread # -g
 
 # Directories
 SRC_DIR = src
@@ -21,7 +21,7 @@ C_OBJECTS   = $(patsubst $(SRC_DIR)/%.c,   $(BUILD_DIR)/%.o, $(C_SOURCES))
 DEPS = $(CPP_OBJECTS:.o=.d) $(C_OBJECTS:.o=.d)
 
 # Output executable
-TARGET = MyApp
+TARGET = player
 
 # Default rule
 all: $(BIN_DIR)/$(TARGET)
