@@ -18,8 +18,6 @@ private:
     // D7 D6 D5 D4 D3  D2 D1 D0
     // MY MX MV ML RGB MH  x  x
     std::bitset<8> MADCTL = 0b00000000;
-    int screenWidth = 128;
-    int screenHeight = 160;
     struct DisplayArea{int displayWidth; int displayHeight;} displayArea;
     int spi_fd;
     void spiTransfer(bool isData, const uint8_t* data, size_t len);
@@ -32,6 +30,8 @@ private:
     void startWrite();
     uint16_t RGB888ToRGB565(uint32_t color);
 public:
+    int screenWidth = 128;
+    int screenHeight = 160;
     enum class Orientation {
         Portrait,
         Landscape,
