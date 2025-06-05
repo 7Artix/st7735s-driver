@@ -1,11 +1,34 @@
 #include <iostream>
 #include <cstring>
+#include <termios.h>
+#include <unistd.h>
+#include <algorithm> 
 
 # include "video_player.hpp"
 
-VideoPlayer::VideoPlayer(ST7735S& screen, uniframe::Orientation orientation) : screen(screen), orientation(orientation), running(false)
+// #define DEBUG_OUTPUT
+
+// Swith the terminal into the raw input mode (input the command without "return");
+namespace {
+    struct TerminalRawMode {
+        termios orig;
+        TerminalRawMode() {
+            tcgetattr(STDIN_FILENO, &orig);
+            termios raw = orig;
+            raw.c_lflag &= ~(ICANON | ECHO);
+            tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw);
+        }
+        ~TerminalRawMode() {
+            tcsetattr(STDIN_FILENO, TCSAFLUSH, &orig);
+        }
+    };
+}
+
+VideoPlayer::VideoPlayer(ST7735S& screen, uniframe::Orientation orientation)
+    : screen(screen), orientation(orientation), timeSync(), running(false)
 {
     // avformat_network_init();
+    static TerminalRawMode terminalModeGuard;
 }
 
 VideoPlayer::~VideoPlayer()
@@ -149,6 +172,8 @@ bool VideoPlayer::load(const std::string& path)
     }
 
     screen.rangeAdapt(codecCtxVideo->width, codecCtxVideo->height, orientation);
+
+    durationUs = formatCtx->duration;
     
     // std::cout << "Loaded video: " << (formatCtx->url) << std::endl;
     // std::cout << "Duration: " << formatCtx->duration / double(AV_TIME_BASE) << " seconds" << std::endl;
@@ -164,13 +189,37 @@ void VideoPlayer::loopDemux()
 {
     while (running) {
         if (seekRequest) {
-            int64_t seekTarget = static_cast<int64_t>(seekTargetSeconds) * AV_TIME_BASE;
-            if (av_seek_frame(formatCtx, streamIndexVideo, seekTarget, AVSEEK_FLAG_BACKWARD) < 0) {
+            flushing.store(true);
+
+            // Awake the other threads to response the request.
+            // cvPacketVideo.notify_all();
+            // cvRawVideo.notify_all();
+
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+
+            {
+                std::lock_guard<std::mutex> lockPacket(mtxPacketVideo);
+                while (!queuePacketVideo.empty()) queuePacketVideo.pop();
+            }
+            {
+                std::lock_guard<std::mutex> lockRaw(mtxRawVideo);
+                while (!queueRawVideo.empty()) queueRawVideo.pop();
+            }
+
+            tb_t timestempTarget = av_rescale_q(seekTargetUs, AVRational{1, 1000000}, streamVideo->time_base);
+            if (av_seek_frame(formatCtx, streamIndexVideo, timestempTarget, AVSEEK_FLAG_BACKWARD) < 0) {
                 std::cerr << "Seek failed" << std::endl;
             } else {
                 avcodec_flush_buffers(codecCtxVideo);
             }
-            seekRequest = false;
+
+            resetTimeRequest.store(true);
+            seekRequest.store(false);
+            flushing.store(false);
+
+            cvPacketVideo.notify_all();
+            cvRawVideo.notify_all();
+            std::cout << "Seek request handled" << std::endl;
             continue;
         }
 
@@ -184,7 +233,7 @@ void VideoPlayer::loopDemux()
         if (packet->stream_index != streamIndexVideo) continue;
         // std::cout << "[Decode] Packet pts: " << packet->pts << " dts: " << packet->dts << std::endl;
         std::unique_lock<std::mutex> lockPacket(mtxPacketVideo);
-        cvPacketVideo.wait(lockPacket, [&]() {return queuePacketVideo.size() < maxQueueSizePacketVideo || !running;});
+        cvPacketVideo.wait(lockPacket, [&]() { return (!running) || (queuePacketVideo.size() < maxQueueSizePacketVideo);});
         if (!running) break;
 
         queuePacketVideo.push(std::move(packet));
@@ -227,12 +276,17 @@ void VideoPlayer::loopDecodeVideo()
         return;
     }
 
+    std::cout << "Decode pre handled" << std::endl;
+
     while (running) {
         // Acquire packet from the packet queue.
         std::unique_lock<std::mutex> lockPacket(mtxPacketVideo);
-        cvPacketVideo.wait(lockPacket, [&]() {return !queuePacketVideo.empty() || !running;});
+        cvPacketVideo.wait(lockPacket, [&]() { return (!running) || (!flushing && !queuePacketVideo.empty());});
         if (!running) break;
+        // if (flushing) continue;
+        // if (queuePacketVideo.empty()) continue;
 
+        std::cout << "Enter decode, flushing: " << flushing << std::endl;
         AVPacketPtr packet = std::move(queuePacketVideo.front());
         queuePacketVideo.pop();
         lockPacket.unlock();
@@ -260,8 +314,9 @@ void VideoPlayer::loopDecodeVideo()
             frameDst->pts = pts;
 
             std::unique_lock<std::mutex> lockRaw(mtxRawVideo);
-            cvRawVideo.wait(lockRaw, [&]() {return queueRawVideo.size() < maxQueueSizeRawVideo || !running;});
+            cvRawVideo.wait(lockRaw, [&]() { return (!running) || (!flushing && queueRawVideo.size() < maxQueueSizeRawVideo);});
             if (!running) break;
+            // if (flushing) continue;
             queueRawVideo.push(std::move(frameDst));
             // lockRaw.unlock();
             cvRawVideo.notify_one();
@@ -281,34 +336,56 @@ void VideoPlayer::loopDecodeVideo()
 
 void VideoPlayer::loopDisplayVideo()
 {
-    const int64_t timeStart = av_gettime();
     const AVRational time_base = streamVideo->time_base;
     const int widthDisplay = screen.displayArea.displayWidth;
     const int heightDisplay = screen.displayArea.displayHeight;
     const int bytesPerPixel = av_get_bits_per_pixel(av_pix_fmt_desc_get(AV_PIX_FMT_RGB565BE)) / 8;
+    resetTimeRequest.store(true);
 
-    int64_t ptsStart = -1;
-
-    // const int defaultFps = static_cast<int>(av_q2d(streamVideo->avg_frame_rate));
-    // const int delayBase = (defaultFps > 0) ? static_cast<int>(1000.0 / defaultFps) : 40;
+    std::cout << "Display pre handled" << std::endl;
 
     while (running) {
-        while (paused && running) {
+        while (paused) {
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
         }
 
         std::unique_lock<std::mutex> lockRaw(mtxRawVideo);
-        cvRawVideo.wait(lockRaw, [&]() {return !queueRawVideo.empty() || !running;});
+        cvRawVideo.wait(lockRaw, [&]() { return (!running) || (!flushing && !queueRawVideo.empty());});
         if (!running) break;
-        if (queueRawVideo.empty()) continue;
+        // if (flushing) continue;
+        // if (queueRawVideo.empty()) continue;
+
+        std::cout << "Enter display, flushing: " << flushing << std::endl;
 
         AVFramePtr frame = std::move(queueRawVideo.front());
         queueRawVideo.pop();
         lockRaw.unlock();
         cvRawVideo.notify_one();
 
+        if (frame->pts == AV_NOPTS_VALUE) {
+            std::cerr << "[Display] Frame has no PTS, skipping." << std::endl;
+            continue;
+        }
+
+        // Get pts in μs of the frame
+        us_t ptsFrameUs = av_rescale_q(frame->pts, time_base, AVRational{1, 1000000});
+        this->currentPtsUs = ptsFrameUs;
+
+        // If need request time
+        if (resetTimeRequest.exchange(false)) {
+            timeSync.resetPtsBaseUs(ptsFrameUs);
+        }
+        us_t timeTargetUs = timeSync.getFrameTimeUs(ptsFrameUs, speedFactor.load());
+        us_t timeNowUs = av_gettime();
+
+        if (timeTargetUs > timeNowUs) {
+            std::this_thread::sleep_for(std::chrono::microseconds(timeTargetUs - timeNowUs));
+        }
+
         // Prepare the frame buffer
+#ifdef DEBUG_OUTPUT
         std::cout << "[Display] Frame displayed: pts=" << frame->pts << std::endl;
+#endif
         std::vector<uint8_t> buffer(widthDisplay * heightDisplay * bytesPerPixel);
         if (frame->linesize[0] == widthDisplay * bytesPerPixel) {
             std::memcpy(buffer.data(), frame->data[0], buffer.size());
@@ -320,28 +397,49 @@ void VideoPlayer::loopDisplayVideo()
             }
         }
 
-        if (frame->pts == AV_NOPTS_VALUE) {
-            std::cerr << "[Display] Frame has no PTS, skipping." << std::endl;
-            //continue;
-        }
-
-        // Get pts in μs of the frame
-        int64_t ptsFrame = av_rescale_q(frame->pts, time_base, AVRational{1, 1000000});
-        
-        if (ptsStart < 0) ptsStart = ptsFrame;
-
-        int64_t timeTarget = timeStart + static_cast<int64_t>((ptsFrame - ptsStart) / speedFactor.load());
-        int64_t timeNow = av_gettime();
-
-        if (timeTarget > timeNow) {
-            std::this_thread::sleep_for(std::chrono::microseconds(timeTarget - timeNow));
-        }
-
         // Display frame
         screen.startWrite();
         screen.writeData(buffer.data(), buffer.size());
     }
     std::cout << "[Display] thread exit" << std::endl;
+}
+
+void VideoPlayer::loopControl()
+{
+    while (running) {
+        int cmd = getchar();
+        if (cmd == EOF) continue;
+
+        if (cmd == '\x1b') {
+            char next1 = getchar();
+            char next2 = getchar();
+            if (next1 == '[') {
+                switch (next2) {
+                    case 'A': std::cout << "↑Up\n"; break;
+                    case 'B': std::cout << "↓Down\n"; break; 
+                    case 'C': std::cout << "→Right\n"; seekForward(seekUsForward); break;
+                    case 'D': std::cout << "←Left\n"; seekBackward(seekUsBackward); break;
+                    default: break;
+                }
+            }
+        } else {
+            switch (cmd) {
+                case ' ':
+                    pauseResume();
+                    break;
+                case '[': {
+                    std::cout << "[Control] Speed: " << setSpeed(-0.1) << "*" << std::endl;
+                    break;
+                }
+                case ']': {
+                    std::cout << "[Control] Speed: " << setSpeed(0.1) << "*" << std::endl;
+                    break;
+                }
+                default:
+                    break;
+            }
+        }
+    }
 }
 
 void VideoPlayer::play()
@@ -355,12 +453,22 @@ void VideoPlayer::play()
     threadDemux = std::thread(&VideoPlayer::loopDemux, this);
     threadDecodeVideo = std::thread(&VideoPlayer::loopDecodeVideo, this);
     threadDisplay = std::thread(&VideoPlayer::loopDisplayVideo, this);
+    threadControl = std::thread(&VideoPlayer::loopControl, this);
+}
+
+void VideoPlayer::wait()
+{
+    if (threadDemux.joinable()) threadDemux.join();
+    if (threadDecodeVideo.joinable()) threadDecodeVideo.join();
+    if (threadDisplay.joinable()) threadDisplay.join();
+    if (threadControl.joinable()) threadControl.join();
 }
 
 void VideoPlayer::stop()
 {
     if (!running) return;
     running = false;
+    paused = false;
 
     cvPacketVideo.notify_all();
     cvRawVideo.notify_all();
@@ -368,6 +476,7 @@ void VideoPlayer::stop()
     if (threadDemux.joinable()) threadDemux.join();
     if (threadDecodeVideo.joinable()) threadDecodeVideo.join();
     if (threadDisplay.joinable()) threadDisplay.join();
+    if (threadControl.joinable()) threadControl.join();
 
     while (!queuePacketVideo.empty()) queuePacketVideo.pop();
     while (!queueRawVideo.empty()) queueRawVideo.pop();
@@ -375,5 +484,33 @@ void VideoPlayer::stop()
 
 void VideoPlayer::pauseResume() {
     paused = !paused;
+    resetTimeRequest.store(true);
 }
 
+void VideoPlayer::seekForward(us_t us)
+{
+    resetTimeRequest.store(true);
+    std::cout << "Enter seek forward" << std::endl;
+    us_t current = currentPtsUs.load();
+    us_t next = std::clamp(static_cast<us_t>(current + us), static_cast<us_t>(0), durationUs);
+    seekTargetUs.store(next);
+    seekRequest.store(true);
+}
+
+void VideoPlayer::seekBackward(us_t us)
+{
+    resetTimeRequest.store(true);
+    std::cout << "Enter seek backward" << std::endl;
+    us_t current = currentPtsUs.load();
+    us_t next = std::clamp(static_cast<us_t>(current - us), static_cast<us_t>(0), durationUs);
+    seekTargetUs.store(next);
+    seekRequest.store(true);
+}
+
+double VideoPlayer::setSpeed(double dFactor)
+{
+    resetTimeRequest.store(true);
+    double speedTarget = (speedFactor + dFactor) <= 0.1 ? 0.1 : (speedFactor + dFactor);
+    speedFactor.store(speedTarget);
+    return speedTarget;
+}

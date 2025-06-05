@@ -10,6 +10,7 @@
 //  D/C: GPIO3_C1
 
 int main(int argc, char* argv[]) {
+    std::cout << av_gettime() << std::endl;
     if (argc < 2) {
         std::cerr << "Usage: player <video_file>" << std::endl;
         return 1;
@@ -20,7 +21,7 @@ int main(int argc, char* argv[]) {
     ST7735S st7735s("/dev/spidev3.0","gpiochip3",8,"gpiochip3",17);
     st7735s.init();
     st7735s.clear();
-    VideoPlayer player(st7735s, uniframe::Orientation::Portrait);
+    VideoPlayer player(st7735s, uniframe::Orientation::Landscape);
     if (!player.load(path)) {
         std::cerr << "Failed to load video" << std::endl;
         return 1;
@@ -30,10 +31,6 @@ int main(int argc, char* argv[]) {
 
     player.play();
 
-    std::cout << "Press Enter to stop playback..." << std::endl;
-    std::cin.get();
-
-    player.stop();
-
+    player.wait();
     return 0;
 }

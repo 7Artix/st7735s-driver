@@ -10,6 +10,7 @@
 
 #include "uni_frame.hpp"
 #include "st7735s.hpp"
+#include "time_sync.hpp"
 
 extern "C" {
 #include <libavformat/avformat.h>
@@ -26,19 +27,24 @@ public:
 
     bool load(const std::string& path);
     void play();
+    void wait();
     void stop();
     void pauseResume();
-    void forward(int second);
-    void backward(int second);
-    void speed(double factor);
-
+    void seekForward(us_t us);
+    void seekBackward(us_t us);
+    double setSpeed(double dFactor);
 private:
     ST7735S& screen;
 
     uniframe::Orientation orientation;
 
+    us_t seekUsForward = 5e06;
+    us_t seekUsBackward = 5e06;
+
     const size_t maxQueueSizePacketVideo = 10;
     const size_t maxQueueSizeRawVideo = 10;
+
+    us_t durationUs = 0;
 
     // Smart pointer for allocating and memory management.
     struct AVFrameDeleter {
@@ -50,6 +56,9 @@ private:
         void operator()(AVPacket* p) const { av_packet_free(&p); }
     };
     using AVPacketPtr = std::unique_ptr<AVPacket, AVPacketDeleter>;
+
+    // Time sync management
+    TimeSync timeSync;
 
     std::queue<AVPacketPtr> queuePacketVideo;
     std::queue<AVFramePtr> queueRawVideo;
@@ -80,10 +89,13 @@ private:
     // uniframe::FramePool framePool{maxQueueSizeRawVideo};
 
     std::atomic<bool> running;
+    std::atomic<bool> flushing{false};
     std::atomic<bool> seekRequest{false};
-    std::atomic<int> seekTargetSeconds{0};
+    std::atomic<us_t> seekTargetUs{0};
     std::atomic<double> speedFactor{1.0};
     std::atomic<bool> paused{false};
+    std::atomic<bool> resetTimeRequest{false};
+    std::atomic<us_t> currentPtsUs{0};
 
     AVFormatContext* formatCtx = nullptr;
 
@@ -103,4 +115,5 @@ private:
     void loopDemux();
     void loopDecodeVideo();
     void loopDisplayVideo();
+    void loopControl();
 };
